@@ -18,7 +18,7 @@ Prerequisites:
    git clone https://github.com/sourabhtomar/Portscanner.git
 2. cd Portscanner
 
-3. go build -o portscanner main.go
+3. go build portscanner.go 
 
 
 4. mv portscanner /usr/local/bin
