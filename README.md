@@ -15,7 +15,7 @@ Prerequisites:
     
 1. Clone this repository:
    ```bash
-   git clone https://github.com/sourabhtomar/port-scan-tool.git
+   git clone https://github.com/sourabhtomar/Portscanner.git
 2. cd Portscanner
 
 3. go build -o portscanner main.go
