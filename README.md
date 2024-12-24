@@ -25,7 +25,6 @@ Prerequisites:
 ## Usage
 
 Command-Line Arguments:
-portscan -d <domain or IP> -p <port-range> -o <output-file>
 
 Available Options:
 
