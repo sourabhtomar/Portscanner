@@ -118,7 +118,8 @@ func printBanner() {
 	fmt.Println(`
 *******************************
 *    PORT SCANNER v6.1        *
-*   Ultra-Fast Scan Tool      *
+*     Fast Scan Tool          *
+*    Made by sourabh          *
 *******************************
 `)
 }
