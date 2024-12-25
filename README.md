@@ -4,7 +4,7 @@ A fast and efficient Go-based port scanner tool for scanning open ports on domai
 
 ## Features
 - Scans multiple domains and IPs simultaneously.
-- Configurable port range (default: 1-65535).
+- Configurable port range
 - Concurrent workers will speed up the scan (default: 500 workers).
 - Option to output results to a file.
 
