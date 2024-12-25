@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
 const (
 	maxWorkers      = 500              // Reasonable number of workers for concurrency
-	timeout         = 5 * time.Second  // Increased timeout for reliability (default 5 seconds)
+	timeout         = 5 * time.Second  // Increased timeout for reliability
 	resolveRetries  = 3                // Retries for DNS resolution
 	resolveDelay    = 200 * time.Millisecond // Delay between retries for DNS resolution
 )
@@ -29,21 +31,20 @@ func isValidIP(ip string) bool {
 // Resolve domain to IP address with retries
 func resolveDomain(domain string) string {
 	if isValidIP(domain) {
-		return domain // Return the IP address directly if it's already a valid IP
+		return domain
 	}
 
-	// Clean the domain by removing "http://" or "https://"
 	domain = strings.TrimPrefix(domain, "http://")
 	domain = strings.TrimPrefix(domain, "https://")
 
 	var resolvedIP string
-	for i := 0; i < resolveRetries+2; i++ { // Increase retries
+	for i := 0; i < resolveRetries; i++ {
 		ips, err := net.LookupHost(domain)
 		if err == nil && len(ips) > 0 {
 			resolvedIP = ips[0]
 			break
 		}
-		time.Sleep(resolveDelay * 2) // Increased delay between retries
+		time.Sleep(resolveDelay)
 	}
 	return resolvedIP
 }
@@ -54,7 +55,7 @@ func checkPort(ip string, port int, openPortsChan chan<- string) {
 	conn, err := net.DialTimeout("tcp", address, timeout)
 	if err == nil {
 		defer conn.Close()
-		openPortsChan <- strconv.Itoa(port) // Send the open port to the channel
+		openPortsChan <- strconv.Itoa(port)
 	}
 }
 
@@ -118,37 +119,44 @@ func printBanner() {
 	fmt.Println(`
 *******************************
 *    PORT SCANNER v6.1        *
-*     Fast Scan Tool          *
-*    Made by sourabh          *
+*   Ultra-Fast Scan Tool      *
 *******************************
 `)
 }
 
 // Function to print the results in a neat and user-friendly way
 func printResults(target string, ip string, openPorts []string) {
-	// Header for each target
 	fmt.Println("\n--------------------------------------------------")
 	fmt.Printf("Target: %s (%s)\n", target, ip)
 	fmt.Println("--------------------------------------------------")
 
-	// Check if there are open ports
 	if len(openPorts) > 0 {
-		// Print open ports in a nice format
 		fmt.Println("Open Ports:")
 		for _, port := range openPorts {
 			fmt.Printf(" - Port %s is OPEN\n", port)
 		}
 	} else {
-		// If no open ports are found
 		fmt.Println("No open ports found.")
 	}
 
-	// Footer to separate results for different targets
 	fmt.Println("--------------------------------------------------")
 }
 
+// Save results to the output file
+func saveResults(outputFile string, results []string) error {
+	file, err := os.Create(outputFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	for _, result := range results {
+		file.WriteString(result + "\n")
+	}
+	return nil
+}
+
 func main() {
-	// Parse command-line arguments
 	domainPtr := flag.String("d", "", "Domain or IP to scan")
 	listPtr := flag.String("l", "", "File with list of domains/subdomains")
 	outputFilePtr := flag.String("o", "", "Output file to save results")
@@ -158,7 +166,6 @@ func main() {
 
 	printBanner()
 
-	// Validate input
 	var targets []string
 	if *domainPtr != "" {
 		targets = append(targets, *domainPtr)
@@ -174,7 +181,6 @@ func main() {
 		return
 	}
 
-	// Parse port range
 	ports, err := parsePortRange(*portRangePtr)
 	if err != nil {
 		fmt.Printf("Invalid port range: %v\n", err)
@@ -183,12 +189,28 @@ func main() {
 
 	var allResults []string
 
-	// Handle scanning for each target (domain or IP)
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-signalChan
+		fmt.Println("\n[!] Interrupt received. Saving results...")
+		if *outputFilePtr != "" {
+			err := saveResults(*outputFilePtr, allResults)
+			if err != nil {
+				fmt.Printf("[!] Error saving results: %v\n", err)
+			} else {
+				fmt.Printf("[+] Results saved to %s\n", *outputFilePtr)
+			}
+		}
+		os.Exit(0) // Exit the program cleanly after saving results
+	}()
+
 	for _, target := range targets {
 		ip := resolveDomain(target)
 		if ip == "" {
 			fmt.Printf("Skipping unresolved target: %s\n", target)
-			continue // Silently skip unresolved domains
+			continue
 		}
 
 		fmt.Printf("Scanning %s (%s)\n", target, ip)
@@ -197,13 +219,11 @@ func main() {
 		openPortsChan := make(chan string, len(ports))
 		var wg sync.WaitGroup
 
-		// Start worker goroutines
 		for i := 0; i < maxWorkers; i++ {
 			wg.Add(1)
 			go worker(ip, portChan, openPortsChan, &wg)
 		}
 
-		// Send ports to workers
 		go func() {
 			for _, port := range ports {
 				portChan <- port
@@ -211,42 +231,31 @@ func main() {
 			close(portChan)
 		}()
 
-		// Wait for all workers to finish and close the results channel
 		go func() {
 			wg.Wait()
 			close(openPortsChan)
 		}()
 
-		// Collect results for the current target
 		var openPorts []string
 		for port := range openPortsChan {
 			openPorts = append(openPorts, port)
 		}
 
-		// Print the results in a neat way
 		printResults(target, ip, openPorts)
 
-		// Collect all results for saving to file (if needed)
 		if len(openPorts) > 0 {
 			result := fmt.Sprintf("%s (%s): open ports %s", target, ip, strings.Join(openPorts, ","))
 			allResults = append(allResults, result)
 		} else {
-			// Log when no open ports are found
 			allResults = append(allResults, fmt.Sprintf("No open ports found for %s (%s)", target, ip))
 		}
 	}
 
-	// Save results to file if the -o option is provided
 	if *outputFilePtr != "" {
-		file, err := os.Create(*outputFilePtr)
+		err := saveResults(*outputFilePtr, allResults)
 		if err != nil {
 			fmt.Printf("Error saving results: %v\n", err)
 			return
-		}
-		defer file.Close()
-
-		for _, result := range allResults {
-			file.WriteString(result + "\n")
 		}
 		fmt.Printf("Results saved to %s\n", *outputFilePtr)
 	}
