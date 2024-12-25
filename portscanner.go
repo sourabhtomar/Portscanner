@@ -119,7 +119,6 @@ func printBanner() {
 *******************************
 *    PORT SCANNER v6.1        *
 *   Ultra-Fast Scan Tool      *
-*    Made by sourabh          *
 *******************************
 `)
 }
